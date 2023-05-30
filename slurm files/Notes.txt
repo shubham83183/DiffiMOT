@@ -1,0 +1,23 @@
+things to check before running
+output file name
+no of gpus, nproc per node
+output dir
+
+in cfgs
+epoch, learning rate scheduler, learning rate, val interval
+resume epoch
+
+in src.py
+writer() 
+
+models
+delete models if u want to rerun
+same with RUNS
+
+
+
+trackformer
+running from 85 epoch with initial learning rate 0.0002 drop at 95
+already ran with continous lr 0.00002 from 50 to 125
+
+

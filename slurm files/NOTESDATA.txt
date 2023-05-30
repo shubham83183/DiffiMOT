@@ -1,0 +1,7 @@
+Pretraining on Crowdhuman dataset for 85 epochs:
+Train dataset : Crowdhuman 19376 images
+Test/evaluation: FRCNN 02,04,05,09,10,11,13.  2659 images
+
+Training on crowdhuman and Mot17 dataset for 40 epochs
+Train dataset : FRCNN 02,04,05,09,10,11,13 (5312 images) + Crowdhuman 19376 images = 24688 images
+Test/evaluation : FRCNN 02,04,05,09,10,11,13.  2659 images

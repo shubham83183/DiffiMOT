@@ -1,0 +1,2 @@
+lambda = 0.0001 does not reduce loss
+lambda = torch.abs(0.0001 to 5000) performs better than lambda = (0.0001 to 5000) no abs 
