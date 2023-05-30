@@ -40,7 +40,7 @@ class DETRTrackingBase(nn.Module):
         device = prev_out['pred_boxes'].device
 
         # for i, (target, prev_ind) in enumerate(zip(targets, prev_indices)):
-        min_prev_target_ind = min([len(prev_ind[1]) for prev_ind in prev_indices])
+        min_prev_target_ind = min([len(prev_ind[1]) for prev_ind in prev_indices[2]])
         num_prev_target_ind = 0
         if min_prev_target_ind:
             num_prev_target_ind = torch.randint(0, min_prev_target_ind + 1, (1,)).item()
@@ -50,7 +50,7 @@ class DETRTrackingBase(nn.Module):
             num_prev_target_ind_for_fps = \
                 torch.randint(int(math.ceil(self._track_query_false_positive_prob * num_prev_target_ind)) + 1, (1,)).item()
 
-        for i, (target, prev_ind) in enumerate(zip(targets, prev_indices)):
+        for i, (target, prev_ind) in enumerate(zip(targets, prev_indices[2])):
             prev_out_ind, prev_target_ind = prev_ind
 
             # random subset

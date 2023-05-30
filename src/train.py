@@ -5,7 +5,7 @@ import random
 import time
 from argparse import Namespace
 from pathlib import Path
-
+from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import sacred
 import torch
@@ -116,7 +116,7 @@ def train(args: Namespace) -> None:
 
     optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
                                   weight_decay=args.weight_decay)
-
+    ##changed [args.lr_drop] to args.lr_drop 
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [args.lr_drop])
 
     dataset_train = build_dataset(split='train', args=args)
@@ -273,14 +273,17 @@ def train(args: Namespace) -> None:
         return
 
     print("Start training")
+    writer = SummaryWriter("runs/crowd_private_detection_1000_5000ABS_mean")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs + 1):
         # TRAIN
         if args.distributed:
             sampler_train.set_epoch(epoch)
-        train_one_epoch(
+        _, loss_value = train_one_epoch(
             model, criterion, postprocessors, data_loader_train, optimizer, device, epoch,
             visualizers['train'], args)
+        writer.add_scalar('Total loss', loss_value, global_step=epoch)
+
 
         if args.eval_train:
             random_transforms = data_loader_train.dataset._transforms
@@ -296,9 +299,10 @@ def train(args: Namespace) -> None:
 
         # VAL
         if epoch == 1 or not epoch % args.val_interval:
-            val_stats, _ = evaluate(
+            val_stats, _, loss_val = evaluate(
                 model, criterion, postprocessors, data_loader_val, device,
                 output_dir, visualizers['val'], args, epoch)
+            writer.add_scalar('Val loss', loss_val, global_step=epoch)
 
             checkpoint_paths = [output_dir / 'checkpoint.pth']
             # extra checkpoint before LR drop and every 100 epochs

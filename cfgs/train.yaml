@@ -4,9 +4,9 @@ lr_backbone: 0.00002
 lr_linear_proj_names: ['reference_points', 'sampling_offsets']
 lr_linear_proj_mult: 0.1
 lr_track: 0.0001
-overwrite_lrs: false
-overwrite_lr_scheduler: false
-batch_size: 2
+overwrite_lrs: False 
+overwrite_lr_scheduler: False
+batch_size: 1
 weight_decay: 0.0001
 epochs: 50
 lr_drop: 40
@@ -114,25 +114,25 @@ seed: 42
 resume: ''
 resume_shift_neuron: False
 # resume optimization from checkpoint
-resume_optim: false
+resume_optim: False
 # resume Visdom visualization
 resume_vis: false
 start_epoch: 1
 eval_only: false
 eval_train: false
 num_workers: 2
-val_interval: 5
+val_interval: 4
 debug: false
 # epoch interval for model saving. if 0 only save last and best models
-save_model_interval: 5
+save_model_interval: 1
 # distributed training parameters
 # number of distributed processes
-world_size: 1
+world_size: 4
 # url used to set up distributed training
 dist_url: env://
 # Visdom params
 # vis_server: http://localhost
 vis_server: ''
 vis_port: 8090
-vis_and_log_interval: 50
+vis_and_log_interval: 1000
 no_vis: false

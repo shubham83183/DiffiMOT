@@ -6,13 +6,80 @@ import numpy as np
 import torch
 from scipy.optimize import linear_sum_assignment
 from torch import nn
-
 from ..util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou
+from torch.utils.tensorboard import SummaryWriter
+
+
+
+class HungarianMatcherDiff(torch.autograd.Function):
+    """
+    Torch module calculating the solution of the travelling salesman problem on a given distance matrix
+    using a Gurobi implementation of a cutting plane algorithm.
+    """
+
+    @staticmethod
+    def forward(ctx, *input):
+        """
+        distance_matrices: torch.Tensor of shape [batch_size, num_vertices, num_vertices]
+        return: torch.Tenspr of shape [batch_size, num_vertices, num_vertices] 0-1 indicator matrices of the solution
+        """
+        ctx.cost_matrix = input[0].detach().cpu()#.numpy()
+        ctx.sizes = input[1]
+        ctx.writer1 = input[2]
+        ctx.count = input[3]
+        selected = [linear_sum_assignment(c)
+                   for i, c in enumerate(input[0].split(input[1], -1))]
+        cost_zeros = [np.zeros_like(c) for i, c in enumerate(input[0].split(input[1], -1))]
+        solution = None
+        for index, cost in zip(selected, cost_zeros):
+            cost[index] = 1
+            if solution is None:
+                solution = cost
+            else:
+                solution = np.append(solution, cost, axis=1)
+        ctx.solution = torch.tensor(solution)
+        return torch.from_numpy(solution).float().to(input[0].device)
+
+    @staticmethod
+    def backward(ctx, *grad_output):
+        assert grad_output[0].shape == ctx.solution.shape
+        grad_output_numpy = grad_output[0].detach().cpu()#.numpy()
+
+        #lambda_val = torch.abs(torch.mean(ctx.cost_matrix[ctx.cost_matrix != float("inf")])/torch.mean(grad_output_numpy))
+        #lambda_val = torch.mean(ctx.cost_matrix[ctx.cost_matrix != float("inf")])/torch.mean(grad_output_numpy)
+        lambda_val = torch.mean(torch.abs((ctx.cost_matrix[ctx.cost_matrix != float("inf")]) /torch.mean(grad_output_numpy)))
+
+        ctx.count += 1
+        if not ctx.count % 1000:
+            ctx.writer1.add_scalar('lambda_val', lambda_val,global_step =ctx.count)
+
+        if lambda_val <=1000:
+            lambda_val = 1000
+        elif lambda_val >=5000:
+            lambda_val = 5000 
+        
+        if not ctx.count % 1000:
+            ctx.writer1.add_scalar('lambda_valSat', lambda_val, global_step = ctx.count)
+
+
+        cost_matrix_prime = ctx.cost_matrix + lambda_val * grad_output_numpy
+        better_selected = [linear_sum_assignment(c)
+                             for i, c in enumerate(cost_matrix_prime.split(ctx.sizes, -1))]
+        modCost_zeros = [np.zeros_like(c) for i, c in enumerate(cost_matrix_prime.split(ctx.sizes, -1))]
+        mod_solution = None
+        for index, cost in zip(better_selected, modCost_zeros):
+            cost[index]=1
+            if mod_solution is None:
+                mod_solution = cost
+            else:
+                mod_solution = np.append(mod_solution, cost, axis=1)
+        gradient = -(ctx.solution - mod_solution) / lambda_val
+        return gradient.to(grad_output[0].device), None, None, None
+
 
 
 class HungarianMatcher(nn.Module):
     """This class computes an assignment between the targets and the predictions of the network
-
     For efficiency reasons, the targets don't include the no_object. Because of this, in general,
     there are more predictions than targets. In this case, we do a 1-to-1 matching of the best
     predictions, while the others are un-matched (and thus treated as non-objects).
@@ -20,7 +87,7 @@ class HungarianMatcher(nn.Module):
 
     def __init__(self, cost_class: float = 1, cost_bbox: float = 1, cost_giou: float = 1,
                  focal_loss: bool = False, focal_alpha: float = 0.25, focal_gamma: float = 2.0):
-        """Creates the matcher
+        """ Creates the matcher
 
         Params:
             cost_class: This is the relative weight of the classification error in the matching cost
@@ -36,9 +103,11 @@ class HungarianMatcher(nn.Module):
         self.focal_loss = focal_loss
         self.focal_alpha = focal_alpha
         self.focal_gamma = focal_gamma
+        self.count = torch.tensor([0], dtype=int, requires_grad=False)
+        self.solver = HungarianMatcherDiff()
         assert cost_class != 0 or cost_bbox != 0 or cost_giou != 0, "all costs cant be 0"
+        self.writer1 = SummaryWriter("runs/crowd_private_detection_1000_5000_Lambda_values_Abs_mean")
 
-    @torch.no_grad()
     def forward(self, outputs, targets):
         """ Performs the matching
 
@@ -123,12 +192,18 @@ class HungarianMatcher(nn.Module):
                     cost_matrix[i, j] = np.inf
                     cost_matrix[i, :, track_query_id + sum(sizes[:i])] = np.inf
                     cost_matrix[i, j, track_query_id + sum(sizes[:i])] = -1
+        cost_matrix = torch.hstack([c[i] for i, c in enumerate(cost_matrix.split(sizes, -1))])
+        # self.count += 1
+        out = self.solver.apply(cost_matrix, sizes,self.writer1, self.count)
+        # indices = [linear_sum_assignment(c[i])
+        #    for i, c in enumerate(cost_matrix.split(sizes, -1))]
 
-        indices = [linear_sum_assignment(c[i])
-                   for i, c in enumerate(cost_matrix.split(sizes, -1))]
-
-        return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
-                for i, j in indices]
+        index = [np.nonzero(x) for i, x in enumerate(out.split(sizes,-1))]
+        indices = [(y[:, 0], y[:, 1]) for i, y in enumerate(index)]
+        #return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+        #       for i, j in indices]
+        return out.to(cost_class.device), sizes, [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+               for i, j in indices]
 
 
 def build_matcher(args):

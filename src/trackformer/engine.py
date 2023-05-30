@@ -156,6 +156,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module, postproc
         metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(lr=optimizer.param_groups[0]["lr"],
                              lr_backbone=optimizer.param_groups[1]["lr"])
+            
 
         if visualizers and (i == 0 or not i % args.vis_and_log_interval):
             _, results = make_results(
@@ -172,7 +173,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module, postproc
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
 
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}, loss_value
 
 
 @torch.no_grad()
@@ -219,7 +220,8 @@ def evaluate(model, criterion, postprocessors, data_loader, device,
                              **loss_dict_reduced_scaled,
                              **loss_dict_reduced_unscaled)
         metric_logger.update(class_error=loss_dict_reduced['class_error'])
-
+        loss = sum(loss_dict_reduced_scaled.values())
+        loss_val = loss.item()
         if visualizers and (i == 0 or not i % args.vis_and_log_interval):
             results_orig, results = make_results(
                 outputs, targets, postprocessors, args.tracking, return_only_orig=False)
@@ -354,4 +356,4 @@ def evaluate(model, criterion, postprocessors, data_loader, device,
     if args.debug:
         exit()
 
-    return eval_stats, coco_evaluator
+    return eval_stats, coco_evaluator, loss_val

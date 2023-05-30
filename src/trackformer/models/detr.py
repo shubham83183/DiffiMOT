@@ -176,11 +176,13 @@ class SetCriterion(nn.Module):
         assert 'pred_logits' in outputs
         src_logits = outputs['pred_logits']
 
-        idx = self._get_src_permutation_idx(indices)
-        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
-        target_classes = torch.full(src_logits.shape[:2], self.num_classes,
-                                    dtype=torch.int64, device=src_logits.device)
-        target_classes[idx] = target_classes_o
+        idx = self._get_src_permutation_idx(indices[2])
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices[2])])
+        #target_classes = torch.full(src_logits.shape[:2], self.num_classes,
+         #                           dtype=torch.int64, device=src_logits.device)
+        #target_classes[idx] = target_classes_o
+        target_classes = self._from_binary_target(indices[0], indices[1], target_classes_o)
+        #target_classes.to(device='cuda',  dtype=torch.int64)
 
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2),
                                   target_classes,
@@ -217,16 +219,17 @@ class SetCriterion(nn.Module):
         assert 'pred_logits' in outputs
         src_logits = outputs['pred_logits']
 
-        idx = self._get_src_permutation_idx(indices)
-        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
-        target_classes = torch.full(src_logits.shape[:2], self.num_classes,
-                                    dtype=torch.int64, device=src_logits.device)
-        target_classes[idx] = target_classes_o
+        idx = self._get_src_permutation_idx(indices[2])
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices[2])])
+        #target_classes = torch.full(src_logits.shape[:2], self.num_classes,
+        #                            dtype=torch.int64, device=src_logits.device)
+        #target_classes[idx] = target_classes_o
 
+        target_classes = self._from_binary_target(indices[0], indices[1], target_classes_o)
         target_classes_onehot = torch.zeros([src_logits.shape[0], src_logits.shape[1], src_logits.shape[2] + 1],
                                             dtype=src_logits.dtype, layout=src_logits.layout, device=src_logits.device)
-        target_classes_onehot.scatter_(2, target_classes.unsqueeze(-1), 1)
 
+        target_classes_onehot.scatter_(2, target_classes.unsqueeze(-1), 1)
         target_classes_onehot = target_classes_onehot[:,:,:-1]
 
         # query_mask = None
@@ -294,17 +297,21 @@ class SetCriterion(nn.Module):
            format (center_x, center_y, h, w), normalized by the image size.
         """
         assert 'pred_boxes' in outputs
-        idx = self._get_src_permutation_idx(indices)
-        src_boxes = outputs['pred_boxes'][idx]
-        target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
-
-        loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
+        idx = self._get_src_permutation_idx(indices[2])
+        #src_boxes = outputs['pred_boxes'][idx]
+        target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices[2])], dim=0)
+        mod_indices = torch.cat([torch.sum(c, 1).view(c.shape[0],1) for c in (indices[0].split(indices[1], -1))], dim=1).T
+        pred_box = torch.cat([i.view([i.shape[0],1])*j for i, j in zip(mod_indices, outputs['pred_boxes'])], dim=0)
+        pred_box = pred_box[pred_box.sum(1)!=0]
+        #target_boxes = torch.full_like(pred_box,0, device='cuda')
+        #target_boxes[mod_indices.flatten()>0] = target_boxes_0
+        loss_bbox = F.l1_loss(pred_box, target_boxes, reduction='none')
 
         losses = {}
         losses['loss_bbox'] = loss_bbox.sum() / num_boxes
 
         loss_giou = 1 - torch.diag(box_ops.generalized_box_iou(
-            box_ops.box_cxcywh_to_xyxy(src_boxes),
+            box_ops.box_cxcywh_to_xyxy(pred_box),
             box_ops.box_cxcywh_to_xyxy(target_boxes)))
         losses['loss_giou'] = loss_giou.sum() / num_boxes
 
@@ -334,8 +341,8 @@ class SetCriterion(nn.Module):
         """
         assert "pred_masks" in outputs
 
-        src_idx = self._get_src_permutation_idx(indices)
-        tgt_idx = self._get_tgt_permutation_idx(indices)
+        src_idx = self._get_src_permutation_idx(indices[2])
+        tgt_idx = self._get_tgt_permutation_idx(indices[2])
 
         src_masks = outputs["pred_masks"]
 
@@ -368,6 +375,21 @@ class SetCriterion(nn.Module):
         batch_idx = torch.cat([torch.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)])
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
+
+    def _from_binary_target(self, indices, sizes, target_classes_o):
+        mod_indices = torch.cat([torch.sum(c, 1).view(1, c.shape[0]) for c in (indices.split(sizes, -1))], dim=0)
+        #mod_indices.to(indices.device)
+        x = 0
+        for i in range(mod_indices.shape[0]):
+            for j in range(mod_indices.shape[1]):
+                if mod_indices[i, j] == 0:
+                    mod_indices[i, j] = mod_indices[i, j] + 20
+                else:
+                    mod_indices[i, j] = mod_indices[i, j] * target_classes_o[x]
+                    x += 1
+
+        return mod_indices.to(indices.device, dtype=torch.int64)
+
 
     def get_loss(self, loss, outputs, targets, indices, num_boxes, **kwargs):
         loss_map = {
