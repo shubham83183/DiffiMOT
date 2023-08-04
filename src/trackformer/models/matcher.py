@@ -12,17 +12,13 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 class HungarianMatcherDiff(torch.autograd.Function):
-    """
-    Torch module calculating the solution of the travelling salesman problem on a given distance matrix
-    using a Gurobi implementation of a cutting plane algorithm.
-    """
+       '''
+       implemented the hungarian algorithm as a layer from paper "Differentiation of Blackbox Combinatorial Solvers
+        '''
 
     @staticmethod
     def forward(ctx, *input):
-        """
-        distance_matrices: torch.Tensor of shape [batch_size, num_vertices, num_vertices]
-        return: torch.Tenspr of shape [batch_size, num_vertices, num_vertices] 0-1 indicator matrices of the solution
-        """
+
         ctx.cost_matrix = input[0].detach().cpu()#.numpy()
         ctx.sizes = input[1]
         ctx.writer1 = input[2]
@@ -44,22 +40,23 @@ class HungarianMatcherDiff(torch.autograd.Function):
     def backward(ctx, *grad_output):
         assert grad_output[0].shape == ctx.solution.shape
         grad_output_numpy = grad_output[0].detach().cpu()#.numpy()
+        #the range of hyperparameter can be changed in this section
 
         #lambda_val = torch.abs(torch.mean(ctx.cost_matrix[ctx.cost_matrix != float("inf")])/torch.mean(grad_output_numpy))
         #lambda_val = torch.mean(ctx.cost_matrix[ctx.cost_matrix != float("inf")])/torch.mean(grad_output_numpy)
-        lambda_val = torch.mean(torch.abs((ctx.cost_matrix[ctx.cost_matrix != float("inf")]) /torch.mean(grad_output_numpy)))
+        lambda_val = torch.mean(torch.abs(ctx.cost_matrix[ctx.cost_matrix != float("inf")])) /torch.mean(torch.abs(grad_output_numpy))
 
         ctx.count += 1
-        if not ctx.count % 1000:
-            ctx.writer1.add_scalar('lambda_val', lambda_val,global_step =ctx.count)
+        if not ctx.count % 10000:
+           ctx.writer1.add_scalar('lambda_val', lambda_val,global_step =ctx.count)
 
         if lambda_val <=1000:
             lambda_val = 1000
         elif lambda_val >=5000:
             lambda_val = 5000 
-        
-        if not ctx.count % 1000:
-            ctx.writer1.add_scalar('lambda_valSat', lambda_val, global_step = ctx.count)
+        # to store the value of lambda
+        if not ctx.count % 10000:
+           ctx.writer1.add_scalar('lambda_valSat', lambda_val, global_step = ctx.count)
 
 
         cost_matrix_prime = ctx.cost_matrix + lambda_val * grad_output_numpy
@@ -106,7 +103,7 @@ class HungarianMatcher(nn.Module):
         self.count = torch.tensor([0], dtype=int, requires_grad=False)
         self.solver = HungarianMatcherDiff()
         assert cost_class != 0 or cost_bbox != 0 or cost_giou != 0, "all costs cant be 0"
-        self.writer1 = SummaryWriter("runs/crowd_private_detection_1000_5000_Lambda_values_Abs_mean")
+        self.writer1 = SummaryWriter("runs/crowd_private_detection_1000_5000_Lambda_values_Abs_mean_old_124_epoch")
 
     def forward(self, outputs, targets):
         """ Performs the matching
