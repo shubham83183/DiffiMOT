@@ -8,11 +8,11 @@ This repository provides an improvement over the official implementation of the 
 
 For installation follow the same installation procedure given by Trackformer repo. Refer to  [docs/INSTALL.md](docs/INSTALL.md) for detailed installation instructions.
 
-## Train TrackFormer
+## Train DiffiMot
 
 The training procedure is also similar to Trackformer. Refer to [docs/TRAIN.md](docs/TRAIN.md) for detailed training instructions.
 
-## Evaluate TrackFormer
+## Evaluate DiffiMot
 
 ### MOT17
 
