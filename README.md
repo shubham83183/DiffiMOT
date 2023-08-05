@@ -22,7 +22,8 @@ The training procedure is also similar to Trackformer. Refer to [docs/TRAIN.md](
 python src/track.py with reid
 
 ```
-## For changing lambda value refer the file src/trackformer/models/matcher.py
+## For changing lambda value 
+Refer the file src/trackformer/models/matcher.py
 
 
 
